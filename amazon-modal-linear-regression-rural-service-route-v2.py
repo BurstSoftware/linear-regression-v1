@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import numpy as np
 
 # ====================== CONFIG ======================
@@ -10,13 +9,11 @@ st.title("📦 Warehouse Pick & Stow Performance")
 st.markdown("**April 5th - April 12th** | 40-Hour Work Week Visualization")
 
 # ====================== DATA ======================
-# Pick Data (Opportunities)
 pick_data = {
     "User": ["stajenni", "narossoh", "arrizola", "hasnsai", "uiyps", "danijac", "gpliegom", "mtiband r", "eliz ev", "hersmary"],
     "Opportunities": [804, 746, 614, 214, 208, 169, 362, 68, 176, 69]
 }
 
-# Stow Data (Opportunities)
 stow_data = {
     "User": ["narossoh", "mnimhas", "matstrak", "gpliegom", "iqrayuss", "uiyps", "hersmary", "danijac", "hasnsai", "eliz ev"],
     "Opportunities": [1068, 668, 594, 580, 758, 330, 246, 168, 416, 204]
@@ -25,19 +22,25 @@ stow_data = {
 pick_df = pd.DataFrame(pick_data)
 stow_df = pd.DataFrame(stow_data)
 
-# ====================== SIMULATE HOURLY DATA ======================
+# ====================== SIMULATE HOURLY DATA (FIXED) ======================
 def simulate_hourly_cumulative(total, hours=40, seed=42):
-    np.random.seed(seed)
-    # Realistic hourly rate with variation
-    hourly_rate = np.random.normal(total / hours, total / hours * 0.15, hours)
-    hourly_rate = np.maximum(hourly_rate, 0)
+    if total <= 0:
+        return np.zeros(hours + 1)
+    
+    # FIXED: Safe seed conversion
+    rng = np.random.default_rng(abs(hash(seed)) % (2**32))
+    
+    # Realistic hourly variation
+    hourly_rate = rng.normal(total / hours, total / hours * 0.18, hours)
+    hourly_rate = np.maximum(hourly_rate, total / hours * 0.3)  # Minimum pace
     cumulative = np.cumsum(hourly_rate)
-    cumulative[-1] = total  # Ensure it ends exactly at total
+    cumulative = np.insert(cumulative, 0, 0)  # Start at 0
+    cumulative[-1] = total  # Force exact total
     return cumulative
 
-hours = list(range(41))  # 0 to 40 hours
+hours = list(range(41))  # 0 to 40
 
-# Generate simulated data for top users
+# Top users
 top_users = ["narossoh", "stajenni", "uiyps", "hersmary", "mnimhas", "matstrak", "gpliegom"]
 
 pick_sim = {}
@@ -47,10 +50,10 @@ for user in top_users:
     pick_total = pick_df[pick_df["User"] == user]["Opportunities"].values
     stow_total = stow_df[stow_df["User"] == user]["Opportunities"].values
     
-    pick_sim[user] = simulate_hourly_cumulative(pick_total[0] if len(pick_total) > 0 else 0, seed=hash(user))
-    stow_sim[user] = simulate_hourly_cumulative(stow_total[0] if len(stow_total) > 0 else 0, seed=hash(user)+1)
+    pick_sim[user] = simulate_hourly_cumulative(pick_total[0] if len(pick_total) > 0 else 0, seed=user)
+    stow_sim[user] = simulate_hourly_cumulative(stow_total[0] if len(stow_total) > 0 else 0, seed=user + "_stow")
 
-# ====================== LAYOUT ======================
+# ====================== CHARTS ======================
 col1, col2 = st.columns(2)
 
 with col1:
@@ -89,7 +92,7 @@ with col2:
     )
     st.plotly_chart(fig_stow, use_container_width=True)
 
-# ====================== TOTAL CUMULATIVE ======================
+# ====================== TOTAL ======================
 st.subheader("📊 Total Pick + Stow Volume (Combined)")
 
 fig_total = go.Figure()
@@ -111,13 +114,11 @@ fig_total.update_layout(
 
 st.plotly_chart(fig_total, use_container_width=True)
 
-# ====================== SUMMARY TABLE ======================
+# ====================== SUMMARY ======================
 st.subheader("📋 Weekly Summary (Opportunities)")
-
 summary = pd.merge(pick_df, stow_df, on="User", how="outer", suffixes=("_Pick", "_Stow")).fillna(0)
 summary["Total"] = summary["Opportunities_Pick"] + summary["Opportunities_Stow"]
 summary = summary.sort_values("Total", ascending=False)
 st.dataframe(summary, use_container_width=True)
 
-# ====================== FOOTER ======================
 st.caption("Simulated hourly progression based on weekly totals • Built with Streamlit & Plotly")
